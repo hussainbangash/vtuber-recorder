@@ -33,3 +33,6 @@ dist-ssr
 *.webm
 *.mp4
 *.mov
+
+.vercel
+.env*
