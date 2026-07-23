@@ -44,5 +44,5 @@ export function useVrmViewer() {
     }
   }, []);
 
-  return { canvasRef, status, error, loadFile };
+  return { canvasRef, viewerRef, status, error, loadFile };
 }

@@ -21,6 +21,8 @@ export class VrmViewer {
   private readonly loader: GLTFLoader;
   private vrm: VRM | null = null;
   private rafId = 0;
+  // Optional per-frame callback (used to apply face tracking before vrm.update).
+  private frameHook: ((vrm: VRM, delta: number) => void) | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -93,12 +95,20 @@ export class VrmViewer {
     }
   }
 
+  /** Register a callback run each frame just before `vrm.update` (face tracking). */
+  setFrameHook(fn: ((vrm: VRM, delta: number) => void) | null): void {
+    this.frameHook = fn;
+  }
+
   private startLoop(): void {
     const tick = (): void => {
       this.rafId = requestAnimationFrame(tick);
       this.resizeToDisplaySize();
       const delta = this.clock.getDelta();
-      this.vrm?.update(delta); // spring bones, expressions, look-at
+      if (this.vrm) {
+        this.frameHook?.(this.vrm, delta); // apply tracking, then let the VRM settle
+        this.vrm.update(delta); // spring bones, expressions, look-at
+      }
       this.renderer.render(this.scene, this.camera);
     };
     tick();

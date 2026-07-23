@@ -61,3 +61,28 @@
   background: rgba(153, 27, 27, 0.85);
   color: #fecaca;
 }
+
+.stage-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Small mirrored webcam preview in the corner (for the user; excluded from the
+   recording in a later milestone). */
+.webcam-preview {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  width: 180px;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  transform: scaleX(-1); /* selfie mirror; does not affect what MediaPipe reads */
+  background: #0f172a;
+}
+.webcam-preview.is-hidden {
+  display: none;
+}
