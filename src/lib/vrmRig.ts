@@ -37,14 +37,22 @@ import type { FaceLandmarkerResult } from "@mediapipe/tasks-vision";
 
 const HEAD_SMOOTHING = 0.5; // slerp factor per frame (0 = frozen, 1 = instant)
 const EXPRESSION_SMOOTHING = 0.5;
+const BLINK_SMOOTHING = 0.6; // blinks are fast, so react a bit quicker
 const MAX_HEAD_ANGLE = 0.7; // radians (~40deg) clamp so extreme detections don't snap the neck
 
 /** Sign per axis; flip one if that head movement comes out mirrored/inverted. */
-const HEAD_SIGN = { pitch: -1, yaw: -1, roll: 1 } as const;
+const HEAD_SIGN = { pitch: 1, yaw: -1, roll: 1 } as const;
+
+// MediaPipe's eyeBlink score usually peaks well below 1.0 even when the eye is
+// fully shut, which reads as a permanent squint. Remap so a real closure hits 1.0.
+const BLINK_IN_MIN = 0.15;
+const BLINK_IN_MAX = 0.5;
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 const clampAngle = (v: number): number => Math.max(-MAX_HEAD_ANGLE, Math.min(MAX_HEAD_ANGLE, v));
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
+const remapBlink = (v: number): number =>
+  clamp01((v - BLINK_IN_MIN) / (BLINK_IN_MAX - BLINK_IN_MIN));
 
 // Reused temporaries so we don't allocate on every animation frame.
 const _mat = new THREE.Matrix4();
@@ -87,13 +95,13 @@ function applyExpressions(vrm: VRM, result: FaceLandmarkerResult): void {
   const g = (name: string): number => bs[name] ?? 0;
   const avg = (a: string, b: string): number => (g(a) + g(b)) / 2;
 
-  const set = (name: string, target: number): void => {
+  const set = (name: string, target: number, smoothing = EXPRESSION_SMOOTHING): void => {
     const current = em.getValue(name) ?? 0;
-    em.setValue(name, lerp(current, clamp01(target), EXPRESSION_SMOOTHING));
+    em.setValue(name, lerp(current, clamp01(target), smoothing));
   };
 
-  set("blinkLeft", g("eyeBlinkLeft"));
-  set("blinkRight", g("eyeBlinkRight"));
+  set("blinkLeft", remapBlink(g("eyeBlinkLeft")), BLINK_SMOOTHING);
+  set("blinkRight", remapBlink(g("eyeBlinkRight")), BLINK_SMOOTHING);
   set("aa", g("jawOpen"));
   set("ou", Math.max(g("mouthPucker"), g("mouthFunnel")));
   set("happy", avg("mouthSmileLeft", "mouthSmileRight"));
