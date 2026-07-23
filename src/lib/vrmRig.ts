@@ -18,8 +18,16 @@ import type { FaceLandmarkerResult } from "@mediapipe/tasks-vision";
  *
  * ARKit blendshape (MediaPipe)      ->  VRM expression preset
  *   eyeBlinkLeft / eyeBlinkRight    ->  blinkLeft / blinkRight
- *   jawOpen                         ->  aa   (mouth open, the main "talking" shape)
- *   mouthPucker / mouthFunnel       ->  ou   (rounded mouth)
+ *
+ *   Mouth / lip sync (Milestone 3) — MediaPipe's mouth blendshapes are mapped
+ *   onto the VRM's five vowel visemes:
+ *   jawOpen                         ->  aa   (open "ah", the main talking shape)
+ *   mouthFunnel                     ->  oh   (lips forward + open)
+ *   mouthPucker                     ->  ou   (lips rounded, "oo")
+ *   mouthStretchLeft/Right + open   ->  ih   (corners out + open)
+ *   mouthStretchLeft/Right + closed ->  ee   (corners out, teeth, "eee")
+ *
+ *   Emotions (kept separate from the talking mouth so they don't fight):
  *   mouthSmileLeft/Right (avg)      ->  happy
  *   browDownLeft/Right (avg)        ->  angry
  *   mouthFrownLeft/Right (avg)      ->  sad
@@ -28,8 +36,8 @@ import type { FaceLandmarkerResult } from "@mediapipe/tasks-vision";
  * Notes:
  *   - MediaPipe's blendshapes are ML-predicted and already smooth, so we only
  *     apply a light lerp to remove residual jitter.
- *   - Visemes beyond `aa`/`ou` (ih/ee/oh) are intentionally left for Milestone 3
- *     (lip-sync) to avoid fighting the `happy` smile shape here.
+ *   - The five visemes are normalized so they never sum past 1, which keeps the
+ *     mouth from over-driving into a mush when several fire at once.
  *   - HEAD_SIGN flips are the one empirically-tuned bit: head-pose axis
  *     conventions differ between MediaPipe's camera space and VRM. If a movement
  *     looks inverted, flip the matching sign.
@@ -38,6 +46,7 @@ import type { FaceLandmarkerResult } from "@mediapipe/tasks-vision";
 const HEAD_SMOOTHING = 0.5; // slerp factor per frame (0 = frozen, 1 = instant)
 const EXPRESSION_SMOOTHING = 0.5;
 const BLINK_SMOOTHING = 0.6; // blinks are fast, so react a bit quicker
+const MOUTH_SMOOTHING = 0.7; // lip sync should feel snappy, so smooth less
 const MAX_HEAD_ANGLE = 0.7; // radians (~40deg) clamp so extreme detections don't snap the neck
 
 /** Sign per axis; flip one if that head movement comes out mirrored/inverted. */
@@ -102,8 +111,41 @@ function applyExpressions(vrm: VRM, result: FaceLandmarkerResult): void {
 
   set("blinkLeft", remapBlink(g("eyeBlinkLeft")), BLINK_SMOOTHING);
   set("blinkRight", remapBlink(g("eyeBlinkRight")), BLINK_SMOOTHING);
-  set("aa", g("jawOpen"));
-  set("ou", Math.max(g("mouthPucker"), g("mouthFunnel")));
+
+  // --- Mouth / lip sync (Milestone 3) --------------------------------------
+  // Turn ARKit mouth blendshapes into the VRM's five vowel visemes. Kept apart
+  // from the `happy` smile below so speech and expression don't share lip morphs.
+  const jaw = g("jawOpen");
+  const funnel = g("mouthFunnel"); // lips pushed forward -> "oh"
+  const pucker = g("mouthPucker"); // lips rounded/kissy  -> "ou"
+  const stretch = avg("mouthStretchLeft", "mouthStretchRight"); // corners out -> ih/ee
+  const rounded = Math.max(pucker, funnel);
+
+  // Raw viseme candidates. `aa` is suppressed while the lips are rounded so an
+  // "oo" doesn't also read as a wide-open "ah"; ih/ee split on how open the jaw is.
+  let aa = jaw * (1 - 0.7 * rounded);
+  let oh = funnel * (0.4 + 0.6 * jaw);
+  let ou = pucker;
+  let ih = stretch * jaw;
+  let ee = stretch * (1 - jaw);
+
+  // Normalize so the visemes never sum past 1 (prevents an over-driven mouth
+  // when several fire together); preserve their ratios.
+  const sum = aa + ih + ou + ee + oh;
+  if (sum > 1) {
+    aa /= sum;
+    ih /= sum;
+    ou /= sum;
+    ee /= sum;
+    oh /= sum;
+  }
+
+  set("aa", aa, MOUTH_SMOOTHING);
+  set("ih", ih, MOUTH_SMOOTHING);
+  set("ou", ou, MOUTH_SMOOTHING);
+  set("ee", ee, MOUTH_SMOOTHING);
+  set("oh", oh, MOUTH_SMOOTHING);
+
   set("happy", avg("mouthSmileLeft", "mouthSmileRight"));
   set("angry", avg("browDownLeft", "browDownRight"));
   set("sad", avg("mouthFrownLeft", "mouthFrownRight"));

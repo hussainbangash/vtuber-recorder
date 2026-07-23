@@ -4,7 +4,7 @@ A browser-based VTuber tool: load a **VRM** avatar, have it mirror your face in 
 your webcam, and record it over a solid **green screen** for chroma-keying in any editor.
 Everything runs **on-device in the browser** — no backend, no uploads.
 
-> 🚧 Work in progress, built milestone by milestone. Currently at **Milestone 2 (face tracking)**.
+> 🚧 Work in progress, built milestone by milestone. Currently at **Milestone 3 (mouth / lip sync)**.
 
 ## Stack
 
@@ -38,18 +38,27 @@ We map those onto the VRM ([`src/lib/vrmRig.ts`](src/lib/vrmRig.ts)):
   local space differ.
 - **Expressions** — map ARKit blendshapes to VRM expression presets:
 
-  | ARKit (MediaPipe) | VRM preset |
-  |---|---|
-  | `eyeBlinkLeft` / `eyeBlinkRight` | `blinkLeft` / `blinkRight` |
-  | `jawOpen` | `aa` (mouth open) |
-  | `mouthPucker` / `mouthFunnel` | `ou` |
-  | `mouthSmileLeft/Right` | `happy` |
-  | `browDownLeft/Right` | `angry` |
-  | `mouthFrownLeft/Right` | `sad` |
-  | `browOuterUpLeft/Right` | `surprised` |
+  | ARKit (MediaPipe) | VRM preset | Notes |
+  |---|---|---|
+  | `eyeBlinkLeft` / `eyeBlinkRight` | `blinkLeft` / `blinkRight` | remapped so a real closure reads as a full blink |
+  | `jawOpen` | `aa` | open "ah" — the main talking shape |
+  | `mouthFunnel` | `oh` | lips forward + open |
+  | `mouthPucker` | `ou` | rounded "oo" |
+  | `mouthStretchLeft/Right` (+ open jaw) | `ih` | corners out + open |
+  | `mouthStretchLeft/Right` (+ closed jaw) | `ee` | corners out, teeth |
+  | `mouthSmileLeft/Right` | `happy` | emotion, kept separate from speech |
+  | `browDownLeft/Right` | `angry` | |
+  | `mouthFrownLeft/Right` | `sad` | |
+  | `browOuterUpLeft/Right` | `surprised` | |
+
+The five mouth **visemes** (`aa/ih/ou/ee/oh`) are normalized so they never sum past 1, which keeps
+the mouth from over-driving into a mush when several fire at once. The talking mouth is kept
+separate from the `happy` smile so speech and emotion don't fight over the same lip morphs.
 
 Because MediaPipe already predicts ARKit blendshapes, no landmark-solving library (e.g. Kalidokit)
-is needed — the mapping is direct and explicit.
+is needed — the mapping is direct and explicit. Lip sync is driven from the **webcam**, not audio:
+the face tracker already gives real mouth shapes on-device with no latency. (Audio-amplitude lip
+sync is noted as a possible fallback for when the face isn't visible, once the mic is captured in M4.)
 
 ## Roadmap
 
