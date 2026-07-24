@@ -52,10 +52,11 @@ const MAX_HEAD_ANGLE = 0.7; // radians (~40deg) clamp so extreme detections don'
 /** Sign per axis; flip one if that head movement comes out mirrored/inverted. */
 const HEAD_SIGN = { pitch: 1, yaw: -1, roll: 1 } as const;
 
-// MediaPipe's eyeBlink score usually peaks well below 1.0 even when the eye is
-// fully shut, which reads as a permanent squint. Remap so a real closure hits 1.0.
-const BLINK_IN_MIN = 0.15;
-const BLINK_IN_MAX = 0.5;
+// MediaPipe's eyeBlink score is noisy: it sits ~0.2-0.3 with eyes wide open and
+// peaks well below 1.0 when shut. Map a generous deadzone (BLINK_IN_MIN) to 0 so
+// open eyes stay open (no droop), and BLINK_IN_MAX to 1 so a real closure fully shuts.
+const BLINK_IN_MIN = 0.35;
+const BLINK_IN_MAX = 0.6;
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 const clampAngle = (v: number): number => Math.max(-MAX_HEAD_ANGLE, Math.min(MAX_HEAD_ANGLE, v));
@@ -115,10 +116,14 @@ function applyExpressions(vrm: VRM, result: FaceLandmarkerResult): void {
   // --- Mouth / lip sync (Milestone 3) --------------------------------------
   // Turn ARKit mouth blendshapes into the VRM's five vowel visemes. Kept apart
   // from the `happy` smile below so speech and expression don't share lip morphs.
-  const jaw = g("jawOpen");
-  const funnel = g("mouthFunnel"); // lips pushed forward -> "oh"
-  const pucker = g("mouthPucker"); // lips rounded/kissy  -> "ou"
-  const stretch = avg("mouthStretchLeft", "mouthStretchRight"); // corners out -> ih/ee
+  // jawOpen is a strong, clean signal; pucker/funnel/stretch are much weaker, so
+  // without gain only `aa` (open) ever shows and the mouth just opens/closes. Boost
+  // the weak shapes so the rounded/spread visemes actually register.
+  const MOUTH_GAIN = 2.0;
+  const jaw = clamp01(g("jawOpen"));
+  const funnel = clamp01(g("mouthFunnel") * MOUTH_GAIN); // lips pushed forward -> "oh"
+  const pucker = clamp01(g("mouthPucker") * MOUTH_GAIN); // lips rounded/kissy  -> "ou"
+  const stretch = clamp01(avg("mouthStretchLeft", "mouthStretchRight") * MOUTH_GAIN); // -> ih/ee
   const rounded = Math.max(pucker, funnel);
 
   // Raw viseme candidates. `aa` is suppressed while the lips are rounded so an
